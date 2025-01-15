@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M3U8 Downloader</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .dark {
+            --tw-bg-opacity: 1;
+            background-color: rgb(17 24 39 / var(--tw-bg-opacity));
+            color: rgb(243 244 246);
+        }
+        
+        .dark .card {
+            background-color: rgb(31 41 55);
+            border: 1px solid rgb(55 65 81);
+        }
+        
+        .animate-pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes slide {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 100% 50%; }
+        }
+
+        .gradient-progress {
+            background: linear-gradient(90deg, #3B82F6 0%, #60A5FA 50%, #3B82F6 100%);
+            background-size: 200% 100%;
+            animation: slide 2s linear infinite;
+        }
+    </style>
+</head>
+<body class="dark min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto">
+            <header class="mb-8">
+                <h1 class="text-4xl font-bold text-blue-400 mb-2 flex items-center">
+                    <i class="fas fa-download mr-3"></i>
+                    M3U8 Downloader
+                </h1>
+                <p class="text-gray-400">Monitor and manage your video downloads</p>
+            </header>
+
+            <!-- Current Download -->
+            <div class="card rounded-lg shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4 text-blue-400">Current Download</h2>
+                <div id="currentDownload" class="text-gray-300">
+                    <div class="flex items-center justify-center h-24 text-gray-400">
+                        <i class="fas fa-clock mr-2"></i>
+                        No active download
+                    </div>
+                </div>
+            </div>
+
+            <!-- Download Queue -->
+            <div class="card rounded-lg shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4 text-blue-400">Download Queue</h2>
+                <div id="downloadQueue" class="space-y-4">
+                    <!-- Queue items will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Download History -->
+            <div class="card rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4 text-blue-400">Download History</h2>
+                <div id="downloadHistory" class="space-y-4">
+                    <!-- History items will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download Modal -->
+    <div id="downloadModal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center">
+        <div class="bg-gray-800 rounded-lg p-6 w-96 border border-gray-700">
+            <h3 class="text-xl font-semibold mb-4 text-blue-400">Configure Download</h3>
+            <input type="text" 
+                   id="downloadFilename" 
+                   placeholder="Enter filename" 
+                   class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-200 placeholder-gray-400">
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeModal()" 
+                        class="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors">
+                    Cancel
+                </button>
+                <button onclick="startDownload()" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    Start Download
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentDownloadId = null;
+
+        function updateStatus() {
+            fetch('/download_status')
+                .then(response => response.json())
+                .then(data => {
+                    updateCurrentDownload(data.current_download);
+                    updateDownloadHistory(data.history);
+                });
+        }
+
+        function updateCurrentDownload(download) {
+            const container = document.getElementById('currentDownload');
+            
+            if (!download) {
+                container.innerHTML = `
+                    <div class="flex items-center justify-center h-24 text-gray-400">
+                        <i class="fas fa-clock mr-2"></i>
+                        No active download
+                    </div>`;
+                return;
+            }
+
+            const progressBar = download.bytes_downloaded ? 
+                `<div class="w-full bg-gray-700 rounded-full h-3 mb-3">
+                    <div class="gradient-progress h-3 rounded-full" style="width: 100%"></div>
+                 </div>` : '';
+
+            const speed = download.formatted_speed ? 
+                `<div class="flex items-center">
+                    <i class="fas fa-tachometer-alt mr-2 text-blue-400"></i>
+                    <p class="text-sm text-gray-300">${download.formatted_speed}</p>
+                 </div>` : '';
+
+            container.innerHTML = `
+                <div class="border border-gray-700 rounded-lg p-4 bg-gray-800">
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <h3 class="font-medium text-gray-200">${download.filename}</h3>
+                            <div class="flex items-center text-sm text-gray-400">
+                                <i class="fas fa-circle text-xs mr-2 ${getStatusIcon(download.status)}"></i>
+                                ${download.status}
+                            </div>
+                        </div>
+                        <span class="px-3 py-1 text-sm rounded-full ${getStatusColor(download.status)}">
+                            ${download.status}
+                        </span>
+                    </div>
+                    ${progressBar}
+                    <div class="flex justify-between items-center text-sm">
+                        <div class="flex items-center">
+                            <i class="fas fa-hdd mr-2 text-blue-400"></i>
+                            <p class="text-gray-300">${download.formatted_size || '0 B'}</p>
+                        </div>
+                        ${speed}
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateDownloadHistory(history) {
+            const container = document.getElementById('downloadHistory');
+            container.innerHTML = '';
+
+            Object.values(history)
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .forEach(download => {
+                    const div = document.createElement('div');
+                    div.className = 'border border-gray-700 rounded-lg p-4 bg-gray-800 hover:bg-gray-750 transition-colors';
+                    
+                    const downloadButton = !download.status || download.status === 'pending' ? 
+                        `<button onclick="showDownloadModal('${download.id}')" 
+                                 class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-download mr-1"></i>
+                            Download
+                         </button>` : '';
+
+                    div.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-medium text-gray-200">
+                                    ${download.filename || 'Unnamed Download'}
+                                </h3>
+                                <p class="text-sm text-gray-400 break-all mt-1">
+                                    <i class="fas fa-link mr-1"></i>
+                                    ${download.url}
+                                </p>
+                                <p class="text-sm text-gray-500 mt-2">
+                                    <i class="far fa-clock mr-1"></i>
+                                    ${new Date(download.timestamp).toLocaleString()}
+                                </p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="px-3 py-1 text-sm rounded-full ${getStatusColor(download.status)}">
+                                    ${download.status}
+                                </span>
+                                ${downloadButton}
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'pending': 'bg-yellow-900 text-yellow-200',
+                'queued': 'bg-purple-900 text-purple-200',
+                'downloading': 'bg-blue-900 text-blue-200',
+                'completed': 'bg-green-900 text-green-200',
+                'failed': 'bg-red-900 text-red-200'
+            };
+            return colors[status] || 'bg-gray-700 text-gray-300';
+        }
+
+        function getStatusIcon(status) {
+            const colors = {
+                'pending': 'text-yellow-400',
+                'queued': 'text-purple-400',
+                'downloading': 'text-blue-400 animate-pulse-slow',
+                'completed': 'text-green-400',
+                'failed': 'text-red-400'
+            };
+            return colors[status] || 'text-gray-400';
+        }
+
+        function showDownloadModal(downloadId) {
+            currentDownloadId = downloadId;
+            document.getElementById('downloadModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('downloadModal').classList.add('hidden');
+            document.getElementById('downloadFilename').value = '';
+            currentDownloadId = null;
+        }
+
+        function startDownload() {
+            const filename = document.getElementById('downloadFilename').value;
+            if (!filename) {
+                alert('Please enter a filename');
+                return;
+            }
+
+            fetch('/start_download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    download_id: currentDownloadId,
+                    filename: filename
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert(data.error || 'Failed to start download');
+                    return;
+                }
+                closeModal();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An unexpected error occurred');
+            });
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('downloadModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeModal();
+            }
+        });
+
+        // Start periodic updates
+        setInterval(updateStatus, 1000);
+        updateStatus();
+    </script>
+</body>
+</html>
